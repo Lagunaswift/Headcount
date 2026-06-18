@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store-factory";
 
 export async function POST() {
-  const store = getStore();
+  const store = await getStore();
   const biz = await store.createBusiness({
     name: "AthleticHive",
     overallGoal: "Reach a sustainable base of paying subscribers.",

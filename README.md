@@ -22,13 +22,40 @@ dogfooding.
 
 ## Switch to Firestore (persistent)
 
-1. Create a Firebase project, enable Firestore.
-2. Generate a service account key (JSON).
-3. base64-encode it and put it in `FIREBASE_SERVICE_ACCOUNT_B64`, or point
-   `GOOGLE_APPLICATION_CREDENTIALS` at the file.
+The same `TeamStore` interface backs both stores, so the backend switch is the
+only change — no route or agent code moves. Collections used (flat, with
+parent-id fields): `businesses`, `projects`, `weeks`, `products`.
+
+**Test locally first — no project, no credentials.** Run the Firestore emulator
+(needs Java) and point the app at it:
+
+```bash
+# terminal 1 — emulator
+firebase emulators:start --only firestore   # or run the standalone emulator jar
+
+# terminal 2 — app, pointed at the emulator
+STORE_BACKEND=firestore \
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
+FIREBASE_PROJECT_ID=demo-agentic \
+npm run dev
+```
+
+The Admin SDK auto-detects `FIRESTORE_EMULATOR_HOST` and needs no real
+credentials; `FIREBASE_PROJECT_ID` just namespaces the data.
+
+**Against a real project:**
+
+1. Create a Firebase project and enable Firestore.
+2. Generate a service-account key (JSON).
+3. base64-encode it into `FIREBASE_SERVICE_ACCOUNT_B64`, or point
+   `GOOGLE_APPLICATION_CREDENTIALS` at the file and set `FIREBASE_PROJECT_ID`.
 4. Set `STORE_BACKEND=firestore` in `.env.local`.
 
-Same interface backs both — nothing else changes.
+The store sets `ignoreUndefinedProperties` so an optional field that is simply
+absent (a week with no recommendation yet, a product's unused meta keys) means
+the same thing it does in memory mode. The `NEXT_PUBLIC_FIREBASE_*` vars are for
+the browser client SDK, which the server-side store does not use — leave them
+blank unless you add client-side Firebase features.
 
 ## What's wired
 

@@ -17,7 +17,7 @@ import { write } from "@/agents/writer";
 import { WriterContext, AgentContext } from "@/lib/model";
 
 export async function POST(req: Request) {
-  const store = getStore();
+  const store = await getStore();
   const { projectId, weekId, weekOf } = await req.json();
 
   // 1 + 2: context, then Analyst findings folded in.

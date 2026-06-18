@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store-factory";
 
 export async function GET(req: Request) {
-  const store = getStore();
+  const store = await getStore();
   const businessId = new URL(req.url).searchParams.get("businessId");
   if (!businessId) return NextResponse.json({ error: "businessId required" }, { status: 400 });
   const projects = await store.getProjectsForBusiness(businessId);
@@ -10,7 +10,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const store = getStore();
+  const store = await getStore();
   const b = await req.json();
   const project = await store.createProject({
     businessId: b.businessId,

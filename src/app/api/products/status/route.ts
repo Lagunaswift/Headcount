@@ -9,7 +9,7 @@ import { ProductStatus } from "@/lib/model";
 const ALLOWED: ProductStatus[] = ["draft", "approved", "rejected", "published"];
 
 export async function POST(req: Request) {
-  const store = getStore();
+  const store = await getStore();
   const { productId, status, note } = await req.json();
   if (!ALLOWED.includes(status)) {
     return NextResponse.json({ error: "bad status" }, { status: 400 });

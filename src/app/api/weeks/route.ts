@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store-factory";
 
 export async function POST(req: Request) {
-  const store = getStore();
+  const store = await getStore();
   const b = await req.json();
   // Strip undefined metric keys so absence is real absence (ground-truth rule).
   const metrics: Record<string, number> = {};

@@ -22,14 +22,40 @@ function adminApp(): App {
   const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64;
   if (b64) {
     const json = JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
-    return initializeApp({ credential: cert(json) });
+    return initializeApp({ credential: cert(json), projectId: json.project_id });
   }
-  // Falls back to GOOGLE_APPLICATION_CREDENTIALS / ADC.
-  return initializeApp();
+  // No service-account JSON. Two supported credential-free paths:
+  //   - Firestore emulator: FIRESTORE_EMULATOR_HOST is set, the SDK talks to the
+  //     emulator and needs no real credentials — but it still needs a project id
+  //     to namespace the data.
+  //   - Real Firestore via ADC: GOOGLE_APPLICATION_CREDENTIALS or workload
+  //     identity supplies the credentials; the project id usually comes with them.
+  // Resolve a project id from the usual env vars so the emulator path works and
+  // ADC has an explicit project when the environment does not infer one.
+  const projectId =
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.GOOGLE_CLOUD_PROJECT ||
+    process.env.GCLOUD_PROJECT ||
+    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  return initializeApp(projectId ? { projectId } : undefined);
 }
 
+// Memoised so settings() is applied exactly once. getFirestore() returns a
+// singleton per app, and settings() may only be called before its first use.
+let _db: Firestore | null = null;
+
 function db(): Firestore {
-  return getFirestore(adminApp());
+  if (_db) return _db;
+  const fs = getFirestore(adminApp());
+  // The data model leans on optional fields: a Week carries no `recommendation`
+  // until synthesis runs, a ProductMeta only holds the keys its type needs. The
+  // in-memory store keeps those absent/undefined without complaint; the
+  // Firestore Admin SDK rejects `undefined` field values by default. Ignoring
+  // them makes absence mean the same thing in both backends — which is the whole
+  // promise of the shared TeamStore interface ("nothing else changes").
+  fs.settings({ ignoreUndefinedProperties: true });
+  _db = fs;
+  return _db;
 }
 
 function genId(prefix: string): string {
