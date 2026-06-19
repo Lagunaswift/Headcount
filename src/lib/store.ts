@@ -13,6 +13,7 @@
 import {
   Business,
   Project,
+  ProjectMode,
   Week,
   Recommendation,
   AgentContext,
@@ -20,11 +21,19 @@ import {
   WeeklyMetrics,
   WorkProduct,
   ProductStatus,
+  Quarter,
+  QuarterJudgment,
+  ChosenApproach,
 } from "./model";
 
 export interface TeamStore {
   createBusiness(b: Omit<Business, "id" | "createdAt">): Promise<Business>;
-  createProject(p: Omit<Project, "id" | "createdAt">): Promise<Project>;
+  // The three-loop fields (mode/gatingQuestion/chosenApproach) are NOT supplied
+  // at creation — a brand-new project defaults to focus with no approach yet, so
+  // a solo user with one project just works without touching the Manager.
+  createProject(
+    p: Omit<Project, "id" | "createdAt" | "mode" | "gatingQuestion" | "chosenApproach">
+  ): Promise<Project>;
   addWeek(w: Omit<Week, "id" | "createdAt" | "recommendation">): Promise<Week>;
   saveRecommendation(weekId: string, rec: Recommendation): Promise<Week>;
   getWeeks(projectId: string): Promise<Week[]>;
@@ -47,6 +56,35 @@ export interface TeamStore {
     by: WorkProduct["author"],
     note: string | null
   ): Promise<WorkProduct>;
+
+  // ---- The three-loop layer (Portfolio -> Quarter -> Project) ----
+  createQuarter(q: Omit<Quarter, "id" | "createdAt">): Promise<Quarter>;
+  getOpenQuarter(businessId: string): Promise<Quarter | null>;
+  closeQuarter(quarterId: string, judgment: QuarterJudgment): Promise<Quarter>;
+  setQuarterFocus(
+    quarterId: string,
+    focusProjectId: string,
+    projectModes: Record<string, ProjectMode>
+  ): Promise<Quarter>;
+  setProjectMode(projectId: string, mode: ProjectMode): Promise<Project>;
+  setProjectApproach(
+    projectId: string,
+    gatingQuestion: string,
+    chosen: ChosenApproach
+  ): Promise<Project>;
+}
+
+// Back-compat: projects created before the three-loop layer have no mode/
+// gatingQuestion/chosenApproach. Fill safe defaults on read so they still load
+// identically in both backends. A pre-existing project becomes a focus project
+// with no approach yet — exactly a fresh project's day-one state.
+export function withProjectDefaults(p: Project): Project {
+  return {
+    ...p,
+    mode: p.mode ?? "focus",
+    gatingQuestion: p.gatingQuestion ?? null,
+    chosenApproach: p.chosenApproach ?? null,
+  };
 }
 
 // Deterministic missing-metric computation: tracked but not reported this week.

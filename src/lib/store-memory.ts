@@ -4,16 +4,17 @@
 // local dogfooding; not for anything real.
 
 import {
-  Business, Project, Week, Recommendation, AgentContext,
-  WorkProduct, ProductStatus, AgentRole,
+  Business, Project, ProjectMode, Week, Recommendation, AgentContext,
+  WorkProduct, ProductStatus, AgentRole, Quarter, QuarterJudgment, ChosenApproach,
 } from "./model";
-import { TeamStore, assembleContext } from "./store";
+import { TeamStore, assembleContext, withProjectDefaults } from "./store";
 
 export class InMemoryStore implements TeamStore {
   private businesses = new Map<string, Business>();
   private projects = new Map<string, Project>();
   private weeks = new Map<string, Week>();
   private products = new Map<string, WorkProduct>();
+  private quarters = new Map<string, Quarter>();
   private seq = 0;
 
   private id(prefix: string): string {
@@ -27,11 +28,20 @@ export class InMemoryStore implements TeamStore {
     return business;
   }
 
-  async createProject(p: Omit<Project, "id" | "createdAt">): Promise<Project> {
+  async createProject(
+    p: Omit<Project, "id" | "createdAt" | "mode" | "gatingQuestion" | "chosenApproach">
+  ): Promise<Project> {
     if (!this.businesses.has(p.businessId)) {
       throw new Error(`business ${p.businessId} does not exist`);
     }
-    const project: Project = { ...p, id: this.id("proj"), createdAt: Date.now() };
+    const project: Project = {
+      ...p,
+      id: this.id("proj"),
+      createdAt: Date.now(),
+      mode: "focus",
+      gatingQuestion: null,
+      chosenApproach: null,
+    };
     this.projects.set(project.id, project);
     return project;
   }
@@ -68,11 +78,13 @@ export class InMemoryStore implements TeamStore {
   async getProject(projectId: string): Promise<Project> {
     const p = this.projects.get(projectId);
     if (!p) throw new Error(`project ${projectId} does not exist`);
-    return p;
+    return withProjectDefaults(p);
   }
 
   async getProjectsForBusiness(businessId: string): Promise<Project[]> {
-    return [...this.projects.values()].filter((p) => p.businessId === businessId);
+    return [...this.projects.values()]
+      .filter((p) => p.businessId === businessId)
+      .map(withProjectDefaults);
   }
 
   async getBusiness(businessId: string): Promise<Business> {
@@ -128,6 +140,67 @@ export class InMemoryStore implements TeamStore {
     p.review = { by, at: Date.now(), note };
     this.products.set(productId, p);
     return p;
+  }
+
+  // ---- The three-loop layer ----
+
+  async createQuarter(q: Omit<Quarter, "id" | "createdAt">): Promise<Quarter> {
+    if (!this.businesses.has(q.businessId)) {
+      throw new Error(`business ${q.businessId} does not exist`);
+    }
+    const quarter: Quarter = { ...q, id: this.id("qtr"), createdAt: Date.now() };
+    this.quarters.set(quarter.id, quarter);
+    return quarter;
+  }
+
+  async getOpenQuarter(businessId: string): Promise<Quarter | null> {
+    const open = [...this.quarters.values()].find(
+      (q) => q.businessId === businessId && !q.closed
+    );
+    return open ?? null;
+  }
+
+  async closeQuarter(quarterId: string, judgment: QuarterJudgment): Promise<Quarter> {
+    const q = this.quarters.get(quarterId);
+    if (!q) throw new Error(`quarter ${quarterId} does not exist`);
+    q.judgment = judgment;
+    q.closed = true;
+    this.quarters.set(quarterId, q);
+    return q;
+  }
+
+  async setQuarterFocus(
+    quarterId: string,
+    focusProjectId: string,
+    projectModes: Record<string, ProjectMode>
+  ): Promise<Quarter> {
+    const q = this.quarters.get(quarterId);
+    if (!q) throw new Error(`quarter ${quarterId} does not exist`);
+    q.focusProjectId = focusProjectId;
+    q.projectModes = projectModes;
+    this.quarters.set(quarterId, q);
+    return q;
+  }
+
+  async setProjectMode(projectId: string, mode: ProjectMode): Promise<Project> {
+    const p = this.projects.get(projectId);
+    if (!p) throw new Error(`project ${projectId} does not exist`);
+    p.mode = mode;
+    this.projects.set(projectId, p);
+    return withProjectDefaults(p);
+  }
+
+  async setProjectApproach(
+    projectId: string,
+    gatingQuestion: string,
+    chosen: ChosenApproach
+  ): Promise<Project> {
+    const p = this.projects.get(projectId);
+    if (!p) throw new Error(`project ${projectId} does not exist`);
+    p.gatingQuestion = gatingQuestion;
+    p.chosenApproach = chosen;
+    this.projects.set(projectId, p);
+    return withProjectDefaults(p);
   }
 }
 

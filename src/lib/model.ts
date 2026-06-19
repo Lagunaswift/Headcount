@@ -147,6 +147,13 @@ export interface Business {
   createdAt: number;
 }
 
+// How a project is being run THIS quarter. Set by the operator each quarter
+// (informed by the Manager). Drives how the weekly loop behaves.
+//   focus       -> full weekly chain runs; this is the one active bet
+//   maintenance -> numbers are logged and watched, but NO new moves are produced
+//   dark        -> project accepts nothing this quarter; fully paused
+export type ProjectMode = "focus" | "maintenance" | "dark";
+
 // A project under a business. Holds its identity and ONE active sub-goal —
 // the actual operating target the agents reason against. The overall goal is
 // the why; the sub-goal is the what-this-period.
@@ -156,8 +163,11 @@ export interface Project {
   name: string;
   // One line: what this project IS. The agent's frame for what it's looking at.
   description: string;
-  // The single current operating target. Specific enough that some actions
-  // clearly serve it and others clearly do not. Set by the operator (CEO).
+  // The current operating target the agents reason against. NO LONGER set by
+  // the operator once a quarter is running: when `chosenApproach` exists the
+  // weekly loop derives this from it each week (see subgoal derivation). The
+  // operator's initial value is the day-one fallback for a fresh project that
+  // has no chosenApproach yet, so nothing breaks before the first Advisor run.
   currentSubGoal: string;
   // What success for the sub-goal actually looks like, so an agent can judge
   // progress rather than mere activity.
@@ -165,6 +175,15 @@ export interface Project {
   // Which metrics are real for THIS project. Drives what the weekly form asks
   // for and what the time series tracks. Only the applicable ones.
   trackedMetrics: MetricKey[];
+  // The current operating mode. Defaults to "focus" for a brand-new project
+  // (so a solo user with one project just works without touching the Manager).
+  mode: ProjectMode;
+  // The Advisor's gating question for the current quarter, once set. Null until
+  // the Advisor has run and the operator has picked an approach.
+  gatingQuestion: string | null;
+  // The approach the operator chose for this quarter (the Advisor's lead or an
+  // alternative). Null until chosen. Weekly sub-goals derive from this.
+  chosenApproach: ChosenApproach | null;
   createdAt: number;
 }
 
@@ -350,4 +369,95 @@ export interface CriticReport {
   // Whether, on balance, the Critic thinks the move should proceed to the
   // operator as-is. False means the Synthesiser should revise before you see it.
   endorses: boolean;
+}
+
+// ===========================================================================
+// THE THREE-LOOP LAYER (Portfolio -> Quarter -> Project -> Week)
+//
+// Two slower outer loops above the weekly chain, each running quarterly:
+//   - Manager: picks the ONE focus project, sets others to maintenance/dark,
+//     judges last quarter. Can be pulled forward by the stuck-signal.
+//   - Advisor: inside the focus project, produces the gating question + a few
+//     reasoned approaches, leads with one. The operator picks; weekly sub-goals
+//     then derive from it.
+// The weekly loop is unchanged except it now behaves per project mode.
+// ===========================================================================
+
+// One reasoned approach to answering the quarter's gating question.
+export interface Approach {
+  // Short handle, e.g. "Instrument the activation step".
+  title: string;
+  // The reasoning: why this attacks the question, what it would cost in effort,
+  // and crucially what RESULT would confirm or kill it (falsifiable).
+  rationale: string;
+  // What success for this approach looks like in a few weeks — the thing the
+  // weekly loop will measure against.
+  successSignal: string;
+}
+
+// The Advisor's full quarterly output for the focus project.
+export interface AdvisorReport {
+  // The single question this quarter must answer before moving on.
+  gatingQuestion: string;
+  // 2–3 approaches. approaches[leadIndex] is the recommended lead.
+  approaches: Approach[];
+  // Index into approaches of the recommended lead.
+  leadIndex: number;
+  // WHY the lead is the lead — must reference the actual findings/evidence, not
+  // a generic preference. Falsifiable: when the lead is wrong, this says why it
+  // looked right, so the miss is legible.
+  leadReason: string;
+}
+
+// What the operator picked (the lead, or an alternative). Stored on Project.
+export interface ChosenApproach {
+  fromQuarter: string;         // Quarter.id this was chosen in
+  gatingQuestion: string;      // copied so the project is self-contained
+  approach: Approach;          // the chosen one
+  chosenAt: number;
+}
+
+// The Manager's quarterly recommendation to the operator.
+export interface ManagerReport {
+  // Which project it recommends putting on focus, and why — referencing where
+  // each project actually is, not a generic rule.
+  recommendedFocusProjectId: string;
+  focusReason: string;
+  // Per project, the recommended mode for the coming quarter + one line why.
+  modeRecommendations: { projectId: string; mode: ProjectMode; why: string }[];
+  // If this run was triggered by the stuck-signal mid-quarter, what's stuck.
+  stuckTrigger: string | null;
+}
+
+// The Manager's end-of-quarter (or pulled-forward) assessment.
+export interface QuarterJudgment {
+  // Did the focus project's gating question actually get answered?
+  questionAnswered: boolean;
+  // Honest read on whether the quarter moved the business or just generated
+  // activity. This is the did-it-work loop at the quarter level.
+  assessment: string;
+  // Was this judgment triggered early by the stuck-signal, or at quarter end?
+  pulledForward: boolean;
+  at: number;
+}
+
+// A quarter is the unit the two outer loops operate on. One per business per
+// ~13-week period. Holds the portfolio decision (which project is focus, what
+// mode each other project is in) and, at quarter end, the Manager's judgment.
+export interface Quarter {
+  id: string;
+  businessId: string;          // a quarter belongs to a business/portfolio root
+  label: string;               // e.g. "2026-Q3"
+  startedAt: number;
+  // Which project the Manager/operator put on focus this quarter.
+  focusProjectId: string | null;
+  // Mode per project for this quarter. projectId -> mode. Projects absent from
+  // the map inherit their own Project.mode (treat as maintenance if unsure).
+  projectModes: Record<string, ProjectMode>;
+  // Filled at quarter end (or when pulled forward): did the focus pay off?
+  judgment: QuarterJudgment | null;
+  // True once this quarter is closed (judged). Only one open quarter at a time
+  // per business.
+  closed: boolean;
+  createdAt: number;
 }

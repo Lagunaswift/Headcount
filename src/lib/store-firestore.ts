@@ -10,10 +10,10 @@
 //   products/{id}          (with projectId + weekId fields)
 
 import {
-  Business, Project, Week, Recommendation, AgentContext,
-  WorkProduct, ProductStatus, AgentRole,
+  Business, Project, ProjectMode, Week, Recommendation, AgentContext,
+  WorkProduct, ProductStatus, AgentRole, Quarter, QuarterJudgment, ChosenApproach,
 } from "./model";
-import { TeamStore, assembleContext } from "./store";
+import { TeamStore, assembleContext, withProjectDefaults } from "./store";
 import { getApps, initializeApp, cert, App } from "firebase-admin/app";
 import { getFirestore, Firestore } from "firebase-admin/firestore";
 
@@ -71,10 +71,19 @@ export class FirestoreStore implements TeamStore {
     return business;
   }
 
-  async createProject(p: Omit<Project, "id" | "createdAt">): Promise<Project> {
+  async createProject(
+    p: Omit<Project, "id" | "createdAt" | "mode" | "gatingQuestion" | "chosenApproach">
+  ): Promise<Project> {
     const biz = await this.d.collection("businesses").doc(p.businessId).get();
     if (!biz.exists) throw new Error(`business ${p.businessId} does not exist`);
-    const project: Project = { ...p, id: genId("proj"), createdAt: Date.now() };
+    const project: Project = {
+      ...p,
+      id: genId("proj"),
+      createdAt: Date.now(),
+      mode: "focus",
+      gatingQuestion: null,
+      chosenApproach: null,
+    };
     await this.d.collection("projects").doc(project.id).set(project);
     return project;
   }
@@ -111,12 +120,12 @@ export class FirestoreStore implements TeamStore {
   async getProject(projectId: string): Promise<Project> {
     const snap = await this.d.collection("projects").doc(projectId).get();
     if (!snap.exists) throw new Error(`project ${projectId} does not exist`);
-    return snap.data() as Project;
+    return withProjectDefaults(snap.data() as Project);
   }
 
   async getProjectsForBusiness(businessId: string): Promise<Project[]> {
     const snap = await this.d.collection("projects").where("businessId", "==", businessId).get();
-    return snap.docs.map((d) => d.data() as Project);
+    return snap.docs.map((d) => withProjectDefaults(d.data() as Project));
   }
 
   async getBusiness(businessId: string): Promise<Business> {
@@ -168,5 +177,70 @@ export class FirestoreStore implements TeamStore {
     const review = { by, at: Date.now(), note };
     await ref.update({ status, review });
     return { ...(snap.data() as WorkProduct), status, review };
+  }
+
+  // ---- The three-loop layer ----
+  // quarters/{id} with a businessId field — the same flat-collection pattern.
+
+  async createQuarter(q: Omit<Quarter, "id" | "createdAt">): Promise<Quarter> {
+    const biz = await this.d.collection("businesses").doc(q.businessId).get();
+    if (!biz.exists) throw new Error(`business ${q.businessId} does not exist`);
+    const quarter: Quarter = { ...q, id: genId("qtr"), createdAt: Date.now() };
+    await this.d.collection("quarters").doc(quarter.id).set(quarter);
+    return quarter;
+  }
+
+  async getOpenQuarter(businessId: string): Promise<Quarter | null> {
+    const snap = await this.d
+      .collection("quarters")
+      .where("businessId", "==", businessId)
+      .where("closed", "==", false)
+      .get();
+    if (snap.empty) return null;
+    return snap.docs[0].data() as Quarter;
+  }
+
+  async closeQuarter(quarterId: string, judgment: QuarterJudgment): Promise<Quarter> {
+    const ref = this.d.collection("quarters").doc(quarterId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new Error(`quarter ${quarterId} does not exist`);
+    await ref.update({ judgment, closed: true });
+    return { ...(snap.data() as Quarter), judgment, closed: true };
+  }
+
+  async setQuarterFocus(
+    quarterId: string,
+    focusProjectId: string,
+    projectModes: Record<string, ProjectMode>
+  ): Promise<Quarter> {
+    const ref = this.d.collection("quarters").doc(quarterId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new Error(`quarter ${quarterId} does not exist`);
+    await ref.update({ focusProjectId, projectModes });
+    return { ...(snap.data() as Quarter), focusProjectId, projectModes };
+  }
+
+  async setProjectMode(projectId: string, mode: ProjectMode): Promise<Project> {
+    const ref = this.d.collection("projects").doc(projectId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new Error(`project ${projectId} does not exist`);
+    await ref.update({ mode });
+    return withProjectDefaults({ ...(snap.data() as Project), mode });
+  }
+
+  async setProjectApproach(
+    projectId: string,
+    gatingQuestion: string,
+    chosen: ChosenApproach
+  ): Promise<Project> {
+    const ref = this.d.collection("projects").doc(projectId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new Error(`project ${projectId} does not exist`);
+    await ref.update({ gatingQuestion, chosenApproach: chosen });
+    return withProjectDefaults({
+      ...(snap.data() as Project),
+      gatingQuestion,
+      chosenApproach: chosen,
+    });
   }
 }
