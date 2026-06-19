@@ -3,9 +3,13 @@ import { useEffect, useState, use } from "react";
 
 const METRIC_KEYS = ["leads", "new_customers", "active_customers", "lost_customers", "revenue", "spend"] as const;
 
+type Mode = "focus" | "maintenance" | "dark";
+interface Approach { title: string; rationale: string; successSignal: string; }
 interface Project {
   id: string; name: string; description: string; currentSubGoal: string;
   successLooksLike: string; trackedMetrics: string[];
+  mode: Mode; gatingQuestion: string | null;
+  chosenApproach: { gatingQuestion: string; approach: Approach } | null;
 }
 interface Recommendation {
   oneMove: string; rationale: string; tradeOff: string;
@@ -100,52 +104,84 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     <div className="wrap">
       <a href="/" className="mono" style={{ fontSize: 12 }}>← all businesses</a>
       <div className="eyebrow" style={{ marginTop: 18 }}>Project</div>
-      <h1>{project.name}</h1>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+        <h1>{project.name}</h1>
+        <span className={`tag ${project.mode}`}>{project.mode}</span>
+      </div>
       <p className="muted">{project.description}</p>
       <div className="card" style={{ marginTop: 14 }}>
         <span className="label">Current sub-goal</span>
         <div className="move" style={{ fontSize: 17 }}>{project.currentSubGoal}</div>
+        {project.chosenApproach ? (
+          <p className="muted mono" style={{ fontSize: 12, marginBottom: 10 }}>
+            derived from: {project.chosenApproach.approach.title}
+          </p>
+        ) : (
+          <p className="muted mono" style={{ fontSize: 12, marginBottom: 10 }}>
+            operator-set (no approach chosen yet — pick one in the quarter panel)
+          </p>
+        )}
         <span className="label">Success looks like</span>
         <p className="muted" style={{ marginBottom: 0 }}>{project.successLooksLike}</p>
       </div>
 
       <hr className="rule" />
 
-      {/* ---------------- weekly input ---------------- */}
-      <h3>Log this week</h3>
-      <div className="card">
-        <span className="label">Week of (ISO)</span>
-        <input value={weekOf} onChange={(e) => setWeekOf(e.target.value)} className="mono" />
+      {/* ---------------- weekly input, gated by mode ---------------- */}
+      {project.mode === "dark" && (
+        <div className="paused">
+          This project is dark this quarter — fully paused, accepting no input.
+          Change its mode from the quarter panel to log or run it.
+        </div>
+      )}
 
-        <span className="label">What happened</span>
-        <textarea value={whatHappened} onChange={(e) => setWhatHappened(e.target.value)}
-          placeholder="What you actually did, what moved, what landed." />
+      {project.mode !== "dark" && (
+        <>
+          <h3>{project.mode === "maintenance" ? "Log this week (maintenance — no move)" : "Log this week"}</h3>
+          {project.mode === "maintenance" && (
+            <p className="muted" style={{ fontSize: 14 }}>
+              In maintenance the numbers are logged and watched, but the agent chain does
+              not run and no move is produced.
+            </p>
+          )}
+          <div className="card">
+            <span className="label">Week of (ISO)</span>
+            <input value={weekOf} onChange={(e) => setWeekOf(e.target.value)} className="mono" />
 
-        <span className="label">Metrics — leave blank what you did not measure (blank means no data, not zero)</span>
-        <div className="metrics-grid">
-          {tracked.map((k) => (
-            <div className="metric-cell" key={k}>
-              <span className="label">{k}</span>
-              <input type="number" value={metricVals[k] ?? ""} className="mono"
-                onChange={(e) => setMetricVals((m) => ({ ...m, [k]: e.target.value }))} />
+            <span className="label">What happened</span>
+            <textarea value={whatHappened} onChange={(e) => setWhatHappened(e.target.value)}
+              placeholder="What you actually did, what moved, what landed." />
+
+            <span className="label">Metrics — leave blank what you did not measure (blank means no data, not zero)</span>
+            <div className="metrics-grid">
+              {tracked.map((k) => (
+                <div className="metric-cell" key={k}>
+                  <span className="label">{k}</span>
+                  <input type="number" value={metricVals[k] ?? ""} className="mono"
+                    onChange={(e) => setMetricVals((m) => ({ ...m, [k]: e.target.value }))} />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        {willBeMissing.length > 0 && (
-          <div className="miss">Will be flagged as no data: {willBeMissing.join(", ")}</div>
-        )}
+            {willBeMissing.length > 0 && (
+              <div className="miss">Will be flagged as no data: {willBeMissing.join(", ")}</div>
+            )}
 
-        <span className="label" style={{ marginTop: 14 }}>Blockers</span>
-        <textarea value={blockers} onChange={(e) => setBlockers(e.target.value)}
-          placeholder="What is stuck." />
+            <span className="label" style={{ marginTop: 14 }}>Blockers</span>
+            <textarea value={blockers} onChange={(e) => setBlockers(e.target.value)}
+              placeholder="What is stuck." />
 
-        <div className="row" style={{ marginTop: 6 }}>
-          <button onClick={runWeek} disabled={running || !whatHappened}>
-            {running ? "Agents working…" : "Run the week"}
-          </button>
-          {running && <span className="spin">Synthesiser deciding, Writer drafting if needed…</span>}
-        </div>
-      </div>
+            <div className="row" style={{ marginTop: 6 }}>
+              <button onClick={runWeek} disabled={running || !whatHappened}>
+                {running
+                  ? (project.mode === "maintenance" ? "Logging…" : "Agents working…")
+                  : (project.mode === "maintenance" ? "Log week" : "Run the week")}
+              </button>
+              {running && project.mode === "focus" &&
+                <span className="spin">Synthesiser deciding, Writer drafting if needed…</span>}
+            </div>
+          </div>
+        </>
+      )}
 
       <hr className="rule" />
 

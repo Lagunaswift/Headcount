@@ -2,23 +2,29 @@
 import { useEffect, useState } from "react";
 
 interface Biz { id: string; name: string; overallGoal: string; }
-interface Proj { id: string; name: string; currentSubGoal: string; }
+interface Proj { id: string; name: string; currentSubGoal: string; mode: string; }
+interface Quarter { id: string; label: string; focusProjectId: string | null; }
 
 export default function Home() {
   const [businesses, setBusinesses] = useState<Biz[]>([]);
   const [projects, setProjects] = useState<Record<string, Proj[]>>({});
+  const [quarters, setQuarters] = useState<Record<string, Quarter | null>>({});
   const [busy, setBusy] = useState(false);
 
   async function load() {
     const r = await fetch("/api/businesses");
     const { businesses } = await r.json();
     setBusinesses(businesses);
-    const map: Record<string, Proj[]> = {};
+    const pmap: Record<string, Proj[]> = {};
+    const qmap: Record<string, Quarter | null> = {};
     for (const b of businesses) {
       const pr = await fetch(`/api/projects?businessId=${b.id}`);
-      map[b.id] = (await pr.json()).projects;
+      pmap[b.id] = (await pr.json()).projects;
+      const qr = await fetch(`/api/quarters/open?businessId=${b.id}`);
+      qmap[b.id] = (await qr.json()).quarter;
     }
-    setProjects(map);
+    setProjects(pmap);
+    setQuarters(qmap);
   }
   useEffect(() => { load(); }, []);
 
@@ -32,12 +38,13 @@ export default function Home() {
   return (
     <div className="wrap">
       <div className="eyebrow">Operating System</div>
-      <h1>The company as a weekly loop.</h1>
+      <h1>The company as three loops.</h1>
       <p className="muted">
-        Each business has one permanent goal and a set of constraints. Each project
-        carries one sub-goal. Every week you log what happened; the Synthesiser names
-        one move and judges whether last week&apos;s move worked. When a move needs
-        something written, the Writer drafts it for your approval.
+        A portfolio of businesses. Each quarter the Manager names the ONE focus
+        project and parks the rest; the Advisor sets that project&apos;s gating
+        question and the approach you pick; then the weekly loop runs it on rails.
+        Maintenance projects log their numbers without producing moves; dark
+        projects pause entirely.
       </p>
 
       <div className="row" style={{ marginTop: 18 }}>
@@ -50,20 +57,33 @@ export default function Home() {
 
       {businesses.length === 0 && <p className="muted">No businesses yet. Seed the example to begin.</p>}
 
-      {businesses.map((b) => (
-        <div className="card" key={b.id}>
-          <div className="eyebrow">Business</div>
-          <h2>{b.name}</h2>
-          <p className="muted" style={{ marginBottom: 14 }}>{b.overallGoal}</p>
-          {(projects[b.id] ?? []).map((p) => (
-            <div key={p.id} style={{ borderTop: "1px solid var(--line)", paddingTop: 12, marginTop: 12 }}>
-              <span className="label">Project</span>
-              <a href={`/project/${p.id}`} style={{ fontSize: 18 }}>{p.name}</a>
-              <div className="muted mono" style={{ fontSize: 13 }}>{p.currentSubGoal}</div>
+      {businesses.map((b) => {
+        const q = quarters[b.id];
+        const ps = projects[b.id] ?? [];
+        return (
+          <div className="card" key={b.id}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+              <div>
+                <div className="eyebrow">Business</div>
+                <h2>{b.name}</h2>
+              </div>
+              <a href={`/business/${b.id}`} className="mono" style={{ fontSize: 12 }}>
+                {q ? `quarter ${q.label} →` : "open a quarter →"}
+              </a>
             </div>
-          ))}
-        </div>
-      ))}
+            <p className="muted" style={{ marginBottom: 14 }}>{b.overallGoal}</p>
+            {ps.map((p) => (
+              <div key={p.id} style={{ borderTop: "1px solid var(--line)", paddingTop: 12, marginTop: 12 }}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+                  <a href={`/project/${p.id}`} style={{ fontSize: 18 }}>{p.name}</a>
+                  <span className={`tag ${p.mode}`}>{p.mode}</span>
+                </div>
+                <div className="muted mono" style={{ fontSize: 13 }}>{p.currentSubGoal}</div>
+              </div>
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
