@@ -1,0 +1,139 @@
+# Agentic Company — MVP skeleton
+
+A business that runs as a weekly loop. You are the CEO. Each week you log what
+happened; the **Synthesiser** names one move and judges whether last week's move
+worked; if the move needs something written, the **Writer** drafts it for your
+approval.
+
+## Run it in 60 seconds (no Firestore needed)
+
+```bash
+cp .env.local.example .env.local
+# put your ANTHROPIC_API_KEY in .env.local; leave STORE_BACKEND=memory
+npm install
+npm run dev
+```
+
+Open http://localhost:3000 → "Seed AthleticHive example" → open the project →
+log a week → "Run the week".
+
+In memory mode, data resets on server restart. That is intentional for early
+dogfooding.
+
+## Switch to Firestore (persistent)
+
+The same `TeamStore` interface backs both stores, so the backend switch is the
+only change — no route or agent code moves. Collections used (flat, with
+parent-id fields): `businesses`, `projects`, `weeks`, `products`.
+
+**Test locally first — no project, no credentials.** Run the Firestore emulator
+(needs Java) and point the app at it:
+
+```bash
+# terminal 1 — emulator
+firebase emulators:start --only firestore   # or run the standalone emulator jar
+
+# terminal 2 — app, pointed at the emulator
+STORE_BACKEND=firestore \
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
+FIREBASE_PROJECT_ID=demo-agentic \
+npm run dev
+```
+
+The Admin SDK auto-detects `FIRESTORE_EMULATOR_HOST` and needs no real
+credentials; `FIREBASE_PROJECT_ID` just namespaces the data.
+
+**Against a real project:**
+
+1. Create a Firebase project and enable Firestore.
+2. Generate a service-account key (JSON).
+3. base64-encode it into `FIREBASE_SERVICE_ACCOUNT_B64`, or point
+   `GOOGLE_APPLICATION_CREDENTIALS` at the file and set `FIREBASE_PROJECT_ID`.
+4. Set `STORE_BACKEND=firestore` in `.env.local`.
+
+The store sets `ignoreUndefinedProperties` so an optional field that is simply
+absent (a week with no recommendation yet, a product's unused meta keys) means
+the same thing it does in memory mode. The `NEXT_PUBLIC_FIREBASE_*` vars are for
+the browser client SDK, which the server-side store does not use — leave them
+blank unless you add client-side Firebase features.
+
+## Deploying (Vercel)
+
+The app builds with `next build` and runs on Vercel, with two caveats that make
+it a single-user deployment rather than a product:
+
+1. **Use Firestore, not memory.** The in-memory store keeps state in module
+   scope; on serverless it neither persists across cold starts nor shares across
+   instances. Set `STORE_BACKEND=firestore` and the Firebase credentials.
+2. **The agent routes are slow.** `/api/synthesise` and the quarter
+   Manager/Advisor/close routes run several sequential model calls (some on the
+   top model) and set `maxDuration = 60`. 60s is the Vercel Hobby ceiling and may
+   not be enough for a long focus run; on Pro, raise these to `300`.
+
+Environment variables to set in the Vercel project:
+
+| Variable | Needed for |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | the agent chain (Analyst/Synthesiser/Critic/Writer, Manager, Advisor) |
+| `STORE_BACKEND=firestore` | persistence |
+| `FIREBASE_SERVICE_ACCOUNT_B64` (or ADC) + `FIREBASE_PROJECT_ID` | Firestore access |
+
+No auth yet — deploy it privately/personally; it is not multi-tenant safe.
+
+## What's wired
+
+- `src/lib/model.ts` — the data model (Business → Project → Week, WorkProduct, trust ladder).
+- `src/lib/store*.ts` — TeamStore interface + in-memory and Firestore backends.
+- `src/agents/synthesiser.ts` — decides ONE move; structured output; will not guess on no data.
+- `src/agents/writer.ts` — drafts artifacts in voice; constraints are the voice spec.
+- `src/app/api/synthesise/route.ts` — the loop: context → recommendation → (maybe) draft.
+- `src/app/project/[id]/page.tsx` — the weekly flow you click through.
+
+
+## Model tiers (cost matched to task)
+
+Each agent runs on the cheapest model that can do its job. This is NOT a pipeline
+everything climbs — escalation only happens for high-stakes outputs.
+
+- **Analyst** → Haiku 4.5. Bounded arithmetic and structured findings.
+- **Writer** → Sonnet 4.6 for short copy (email, social); Opus 4.8 for blog
+  articles (public, voice-heavy).
+- **Synthesiser** → Opus 4.8, always. The decision is never cheaped out on.
+- **Critic** (when added) → Opus 4.8. Must be as sharp as what it audits.
+
+**Draft-cheap, review-expensive** applies to blog articles only: Sonnet/Opus
+drafts, then Opus reviews against the voice constraints before the draft reaches
+your approval queue. Low-stakes copy skips review. Tiers live in
+`src/lib/anthropic.ts`; the Writer's per-task choice is in `src/agents/writer.ts`.
+
+## The loop now (with Analyst)
+
+1. assemble context
+2. **Analyst (Haiku)** turns raw metrics into honest findings — conversions,
+   movements, and explicit cautions (small samples, missing data)
+3. **Synthesiser (Opus)** reasons FROM those findings, names one move, assesses
+   last week
+4. if the move needs writing, **Writer** drafts it (model by type, review if
+   high-stakes), lands in `draft`
+
+The Critic and the Writer-split are designed but not built — add them when real
+weeks show the strain, per the sequencing rule. The Analyst is built because the
+funnel/arithmetic strain is already visible.
+
+## Trust ladder (autonomy)
+
+Every drafted artifact lands in `draft`. Nothing leaves draft without you
+(rung zero). Loosening this later is a config change in `RUNG_ZERO_POLICY`
+(`model.ts`), not a rewrite.
+
+## Known gaps (deliberate, for next steps)
+
+- **Revision loop**: rejecting a draft records the reason but does not yet
+  auto-rerun the Writer with it. The `WriterContext.revising` slot exists for this.
+- **Funnel model**: metrics are flat counts. Reasoning about which conversion
+  STEP is the bottleneck (lead→signup→activated→paid) has no structural support
+  yet. Run a few real weeks before modelling it.
+- **Auth / multi-tenancy**: single-user. Required before this is a product for
+  other businesses.
+- **No tests for live agent output**: agent wiring is type-checked and the loop
+  logic is tested with stubs; the prompts themselves need real-key eval.
