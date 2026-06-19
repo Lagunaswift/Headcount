@@ -22,6 +22,10 @@ export type ModelTier = keyof typeof MODELS;
 export const MODEL_SYNTHESISER = MODELS.top;   // the decision — always top
 export const MODEL_ANALYST = MODELS.cheap;     // numbers in, findings out
 export const MODEL_CRITIC = MODELS.top;        // must be as sharp as what it audits
+// Outer loops: both reason across the portfolio/quarter and must be as sharp as
+// the weekly chain they sit above, so both run top.
+export const MODEL_ADVISOR = MODELS.top;       // the quarter's reasoned approaches
+export const MODEL_MANAGER = MODELS.top;       // the portfolio focus call
 
 export function claude(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -32,4 +36,10 @@ export function claude(): Anthropic {
 export function firstText(msg: Anthropic.Message): string {
   const block = msg.content.find((b) => b.type === "text");
   return block && block.type === "text" ? block.text : "";
+}
+
+// Models wrap structured JSON in ``` fences or prefix stray prose. Strip to the
+// JSON before parsing. Shared so every agent's coerce() reads the same way.
+export function stripJsonFences(raw: string): string {
+  return raw.replace(/```json/gi, "").replace(/```/g, "").trim();
 }
