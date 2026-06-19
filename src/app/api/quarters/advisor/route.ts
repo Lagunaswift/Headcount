@@ -5,6 +5,9 @@ import { getStore } from "@/lib/store-factory";
 import { advise, type AdvisorInput } from "@/agents/advisor";
 import { computeStuckSignal } from "@/lib/stuck";
 
+// Runs the Advisor (top model) — raise to 300 on Vercel Pro for long histories.
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   const store = await getStore();
   const { projectId } = await req.json();

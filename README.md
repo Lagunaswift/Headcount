@@ -57,6 +57,29 @@ the same thing it does in memory mode. The `NEXT_PUBLIC_FIREBASE_*` vars are for
 the browser client SDK, which the server-side store does not use — leave them
 blank unless you add client-side Firebase features.
 
+## Deploying (Vercel)
+
+The app builds with `next build` and runs on Vercel, with two caveats that make
+it a single-user deployment rather than a product:
+
+1. **Use Firestore, not memory.** The in-memory store keeps state in module
+   scope; on serverless it neither persists across cold starts nor shares across
+   instances. Set `STORE_BACKEND=firestore` and the Firebase credentials.
+2. **The agent routes are slow.** `/api/synthesise` and the quarter
+   Manager/Advisor/close routes run several sequential model calls (some on the
+   top model) and set `maxDuration = 60`. 60s is the Vercel Hobby ceiling and may
+   not be enough for a long focus run; on Pro, raise these to `300`.
+
+Environment variables to set in the Vercel project:
+
+| Variable | Needed for |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | the agent chain (Analyst/Synthesiser/Critic/Writer, Manager, Advisor) |
+| `STORE_BACKEND=firestore` | persistence |
+| `FIREBASE_SERVICE_ACCOUNT_B64` (or ADC) + `FIREBASE_PROJECT_ID` | Firestore access |
+
+No auth yet — deploy it privately/personally; it is not multi-tenant safe.
+
 ## What's wired
 
 - `src/lib/model.ts` — the data model (Business → Project → Week, WorkProduct, trust ladder).

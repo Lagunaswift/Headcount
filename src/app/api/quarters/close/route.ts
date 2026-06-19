@@ -7,6 +7,9 @@ import { getStore } from "@/lib/store-factory";
 import { judgeQuarter, type JudgeInput } from "@/agents/manager";
 import { computeStuckSignal } from "@/lib/stuck";
 
+// Runs the Manager's quarter judgment (top model) — raise to 300 on Vercel Pro.
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   const store = await getStore();
   const { businessId, pulledForward } = await req.json();

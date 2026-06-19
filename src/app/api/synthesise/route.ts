@@ -19,6 +19,12 @@ import { write } from "@/agents/writer";
 import { planWeeklyRun } from "@/agents/subgoal";
 import { WriterContext, AgentContext } from "@/lib/model";
 
+// The chain runs several sequential model calls (Analyst -> Synthesiser ->
+// Critic -> maybe revise -> maybe Writer + review), some on the top model, so
+// it can take well over a serverless platform's default timeout. 60s is the
+// Hobby ceiling; raise to 300 on Vercel Pro for long focus runs.
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   const store = await getStore();
   const { projectId, weekId, weekOf } = await req.json();

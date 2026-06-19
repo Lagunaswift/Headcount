@@ -8,6 +8,9 @@ import { manage, type ManagerInput, type ManagerProjectView } from "@/agents/man
 import { computeStuckSignal } from "@/lib/stuck";
 import type { Week } from "@/lib/model";
 
+// Runs the Manager (top model) over the portfolio — raise to 300 on Vercel Pro.
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   const store = await getStore();
   const { businessId, pullForward } = await req.json();
